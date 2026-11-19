@@ -1,0 +1,14 @@
+{
+  "schema": "cmb.analysis-integrity/v1",
+  "purpose": "Retrospective integrity anchors for unchanged historical analyses; these are not collection-time receipts or a new experiment.",
+  "runs": {
+    "dev": {
+      "manifest_sha256": "3581422362eedf663827d53375a56a7c51b5d146db44279a1b1409300a77c962",
+      "analysis_sha256": "0da6315ef056ef42ecbb02a3171cc1836e6f39d5d2c82e5b8bf523a01a5f28bf"
+    },
+    "test": {
+      "manifest_sha256": "8552be9fae9a29f054fdfa76d7f4651122ee6e1e73a0d613c373e75a5cdbb22c",
+      "analysis_sha256": "b7f1d21cc70c9dcd77ea2b901f76f2cd9efd3498e0c8d4ba0a952cad2b4d6a5b"
+    }
+  }
+}

@@ -56,6 +56,10 @@ python experiments/llm/audit_cmb_study.py \
 
 The auditor imports none of the collector's/scorer's functions. It derives labels with 60-digit Decimal raw moments, recomputes vector norms/cosine drift, compares recorded predictions, reconstructs all policy selections, and independently reproduces all bootstrap intervals. It verifies compressed trace and log hashes before analyzing them.
 
+The auditor also recomputes comparison deltas, acceptance gates, repair/regression counts, per-task scores, geometry availability, shuffled-answer agreement, and reported arm/policy costs. Bootstrap settings are checked against the frozen protocol rather than accepted from the report.
+
+The original development and confirmation manifests did not hash `analysis.json`. Their original bytes, analysis files, source freeze and audit receipts remain unchanged. The explicitly retrospective [analysis integrity catalog](cmb-study-evidence/analysis-integrity.json) now binds each exact historical manifest to its analysis bytes; it does not claim those analyses were anchored at collection. Other runs must include the SHA-256 of `analysis.json` in their manifest's `evidence_sha256` after analysis and before independent audit. A changed analysis or an unrecognized unbound manifest is rejected.
+
 The raw evidence includes signed vectors and prompts in `traces.jsonl.gz`. Decompress before importing subsets into the existing LLM observations panel (128-record, 20-MiB limit). The complete five-arm confirmation contains 480 records and should not be imported as one batch.
 
 ## Interpret within scope

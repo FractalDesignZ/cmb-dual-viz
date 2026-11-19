@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseLlmTrace, parseLlmTraceJsonl } from './llmTrace';
+import { createHash } from 'node:crypto';
+import { parseLlmTrace, parseLlmTraceBytes, parseLlmTraceJsonl } from './llmTrace';
 
 function fixture() {
   return {
@@ -50,5 +51,20 @@ describe('LLM trace contract', () => {
     expect(() => parseLlmTraceJsonl(text + '\n' + text)).toThrow('Duplicate');
     expect(() => parseLlmTraceJsonl(text + '\n{}')).toThrow();
     expect(() => parseLlmTraceJsonl('')).toThrow();
+  });
+  it('hashes the original UTF-8 upload including its byte order mark', async () => {
+    const value = fixture();
+    value.run_id = 'caf\u00e9';
+    const text = JSON.stringify(value) + '\n';
+    const bytes = new TextEncoder().encode('\ufeff' + text);
+    const parsed = await parseLlmTraceBytes(bytes.buffer);
+    expect(parsed.traces).toEqual([value]);
+    expect(parsed.sha256).toBe(createHash('sha256').update(bytes).digest('hex'));
+    expect(parsed.sha256).not.toBe(createHash('sha256').update(text).digest('hex'));
+  });
+  it('rejects malformed UTF-8 instead of accepting replacement characters', async () => {
+    const bytes = new TextEncoder().encode(JSON.stringify(fixture()));
+    bytes[JSON.stringify(fixture()).indexOf('test')] = 0xff;
+    await expect(parseLlmTraceBytes(bytes.buffer)).rejects.toThrow();
   });
 });
