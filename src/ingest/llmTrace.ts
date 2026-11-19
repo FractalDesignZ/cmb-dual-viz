@@ -92,3 +92,13 @@ export function parseLlmTraceJsonl(text: string): LlmTrace[] {
   }
   return traces;
 }
+
+/** Parse strictly, while identifying the original upload rather than replacement text. */
+export async function parseLlmTraceBytes(bytes: ArrayBuffer): Promise<{ traces: LlmTrace[]; sha256: string }> {
+  if (bytes.byteLength > MAX_LLM_TRACE_BYTES) throw new Error('Trace exceeds 20 MiB');
+  const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  const traces = parseLlmTraceJsonl(text);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  const sha256 = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+  return { traces, sha256 };
+}

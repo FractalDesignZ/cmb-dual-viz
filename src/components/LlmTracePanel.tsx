@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ledgerAppend } from '../compute/ledger';
-import { MAX_LLM_TRACE_BYTES, parseLlmTraceJsonl, type LlmTrace } from '../ingest/llmTrace';
+import { MAX_LLM_TRACE_BYTES, parseLlmTraceBytes, type LlmTrace } from '../ingest/llmTrace';
 
 export function LlmTracePanel() {
   const [traces, setTraces] = useState<LlmTrace[]>([]);
@@ -15,10 +15,7 @@ export function LlmTracePanel() {
       setBusy(true); setError('');
       try {
         if (file.size > MAX_LLM_TRACE_BYTES) throw new Error('Trace exceeds 20 MiB');
-        const text = await file.text();
-        const parsed = parseLlmTraceJsonl(text);
-        const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-        const sha256 = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+        const { traces: parsed, sha256 } = await parseLlmTraceBytes(await file.arrayBuffer());
         ledgerAppend({kind: 'ingest', epistemic: 'RESEARCH/DERIVED', detail: {
           schema: 'cmb.llm-trace/v1', file: file.name, sha256, records: parsed.length,
           sourceAssertionsVerified: false, modelHashes: [...new Set(parsed.map(t => t.model_sha256))],
