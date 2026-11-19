@@ -70,7 +70,11 @@ export function filterCorrelateEdgesByPValue(
 
 export function replayCorrelateEdgesFromLedger(records: LedgerRecord[]): CorrelateEdge[] {
   let edges: CorrelateEdge[] = [];
-  for (const rec of records) {
+  // Snapshot order is newest first. Replay chronologically so older observations
+  // cannot overwrite current values; the first snapshot entry wins time ties.
+  const chronological = records.map((record, index) => ({ record, index }))
+    .sort((a, b) => a.record.at - b.record.at || b.index - a.index);
+  for (const { record: rec } of chronological) {
     if (rec.kind !== 'correlate') continue;
     const hits = (rec.detail?.hits ?? null) as CorrelateHit[] | null;
     if (!Array.isArray(hits) || hits.length === 0) continue;

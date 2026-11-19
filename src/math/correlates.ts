@@ -17,6 +17,9 @@ function asF32(v: Float32Array | number[]): Float32Array {
 
 export type CorrelateMetric = 'pearson' | 'spearman' | 'cosine' | 'lagged-pearson';
 
+// The add-one tail estimate must be able to pass the map's strict p < 0.01 default.
+const CORRELATE_SHUFFLES = 199;
+
 export type CorrelateSeedKind =
   | 'dataset-series'
   | 'meaning-node'
@@ -170,7 +173,7 @@ export function nullZ(
   score: number,
   recomputer: (shuffledTarget: number[]) => number,
   target: number[],
-  nShuffle = 40,
+  nShuffle = CORRELATE_SHUFFLES,
   seed = 12345
 ): { nullMean: number; nullStd: number; zToy: number; pValue: number } {
   const rng = mulberry32(seed);
@@ -197,7 +200,7 @@ function nullZCosine(
   score: number,
   seedFeat: Float32Array | number[],
   targetFeat: Float32Array | number[],
-  nShuffle = 40,
+  nShuffle = CORRELATE_SHUFFLES,
   seed = 99
 ): { nullMean: number; nullStd: number; zToy: number; pValue: number } {
   const rng = mulberry32(seed);
@@ -503,7 +506,7 @@ export function scanCorrelates(
             return pearson(a, sh);
           },
           b,
-          36,
+          CORRELATE_SHUFFLES,
           hashStr(seed.id + tgt.id)
         );
         hits.push({
@@ -515,7 +518,7 @@ export function scanCorrelates(
           metric,
           score,
           lag: lagged.lag,
-          n: a.length,
+          n: a.length - Math.abs(lagged.lag),
           ...nullStats,
           epistemic: demote(seed.epistemic, tgt.epistemic),
           seedNodeId: seed.nodeId,
@@ -534,7 +537,7 @@ export function scanCorrelates(
         score,
         seed.features,
         tgt.features,
-        36,
+        CORRELATE_SHUFFLES,
         hashStr(seed.id + tgt.id + 'cos')
       );
       hits.push({

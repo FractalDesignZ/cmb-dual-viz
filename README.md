@@ -81,7 +81,9 @@ Ops declare a primary TP policy (`TP_ELL_BAND`, `TP_PIX_TILE`, `TP_PAIR_BLOCK`, 
 
 ## Evidence Ledger (S3)
 
-Append-only records for ingest, correlate, compute, and dressing transitions (epistemic tags + ms). Browser keeps an in-memory ring; Node tests/scripts write `artifacts/ledger/*.jsonl`.
+Append-only records for ingest, correlate, compute, and dressing transitions (epistemic tags + ms). Browser correlate records survive reload in a versioned local store bounded to the newest 200 records and 2 MiB; other events stay in memory. Unavailable or full browser storage leaves the live ledger usable. Node tests/scripts write `artifacts/ledger/*.jsonl`.
+
+The Meaning Map replays correlate records with the newest observation winning, including the ledger snapshot's newest-first order. Toy shuffle tails use 199 draws so strong matches can pass the default `p < 0.01` filter; these exploratory values are not formal significance tests. Lagged edges report the number of overlapping sample pairs.
 
 ---
 

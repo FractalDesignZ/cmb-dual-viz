@@ -5,6 +5,8 @@ import {
   replayCorrelateEdgesFromLedger,
 } from './correlateEdges';
 import type { CorrelateHit } from './correlates';
+import { scanCorrelates } from './correlates';
+import type { MeaningNode, IngestedDataset } from '../ingest/types';
 import type { LedgerRecord } from '../compute/ledger';
 
 function hit(partial: Partial<CorrelateHit> = {}): CorrelateHit {
@@ -71,5 +73,54 @@ describe('correlateEdges', () => {
     expect(replayed).toHaveLength(1);
     expect(replayed[0]!.ledgerRef).toBe('led-correlate-2');
     expect(replayed[0]!.score).toBeCloseTo(0.91);
+    expect(replayCorrelateEdgesFromLedger([...records].reverse())).toEqual(replayed);
+  });
+
+  it('keeps the newest snapshot entry when scans share a timestamp', () => {
+    const records: LedgerRecord[] = [
+      { id: 'new', at: 1000, kind: 'correlate', detail: { hits: [hit({ score: .9 })] } },
+      { id: 'old', at: 1000, kind: 'correlate', detail: { hits: [hit({ score: .5 })] } },
+    ];
+    const replayed = replayCorrelateEdgesFromLedger(records);
+    expect(replayed).toHaveLength(1);
+    expect(replayed[0]!.ledgerRef).toBe('new');
+    expect(replayed[0]!.score).toBe(.9);
+  });
+
+  it('allows a scanned series edge through the default threshold and reports paired n', () => {
+    const series = Array.from({ length: 32 }, (_, i) => Math.sin(i*i*.7) + Math.cos(i*2.3));
+    const target = [7, -2, ...series.slice(0, -2)];
+    const dataset: IngestedDataset = {
+      id: 'target', name: 'Target', type: 'generator', format: 'test', enabled: true,
+      epistemic: 'DERIVED/MEANING-MAP', ingestedAt: 0,
+      series: target.map((value, t) => ({ t, value })),
+    };
+    const node: MeaningNode = {
+      id: 'target-node', label: 'Target', kind: 'time-series-window', datasetId: 'target',
+      epistemic: 'DERIVED/MEANING-MAP', features: new Float32Array(),
+      x: 0, y: 0, pullA: 0, pullB: 0, provenance: 'test',
+    };
+    const { hits } = scanCorrelates({ id: 'seed', label: 'Seed', kind: 'dataset-series',
+      nodeId: 'seed-node', epistemic: 'DERIVED/MEANING-MAP', series }, [dataset], [node],
+      { Cl: [], ellFocus: 2, ellMax: 2, coherenceScore: 0, coherenceZ: 0, timePhase: 0 },
+      { maxLag: 3, topN: 100 });
+    const match = hits.find(h => h.targetNodeId === node.id)!;
+    expect(match.lag).toBe(2);
+    expect(match.n).toBe(30);
+    expect(match.pValue).toBeLessThan(.01);
+    expect(filterCorrelateEdgesByPValue(correlateEdgesFromHits([match], 'ledger', '2026-01-01'))).toHaveLength(1);
+  });
+
+  it('allows a scanned cosine edge through the default threshold', () => {
+    const features = Float32Array.from({ length: 32 }, (_, i) => Math.sin(i*i*.7) + Math.cos(i*2.3));
+    const node: MeaningNode = {
+      id: 'target-node', label: 'Target', kind: 'text-claim', datasetId: 'target',
+      epistemic: 'DERIVED/MEANING-MAP', features,
+      x: 0, y: 0, pullA: 0, pullB: 0, provenance: 'test',
+    };
+    const { hits } = scanCorrelates({ id: 'seed', label: 'Seed', kind: 'meaning-node',
+      nodeId: 'seed-node', epistemic: 'DERIVED/MEANING-MAP', features }, [], [node],
+      { Cl: [], ellFocus: 2, ellMax: 2, coherenceScore: 0, coherenceZ: 0, timePhase: 0 });
+    expect(hits.find(h => h.targetNodeId === node.id)!.pValue).toBeLessThan(.01);
   });
 });

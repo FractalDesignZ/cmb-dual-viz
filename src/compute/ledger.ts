@@ -1,6 +1,7 @@
 /**
  * Evidence Ledger — append-only ingest / correlate / compute / dressing records.
- * Browser: in-memory ring. Node scripts: JSONL under artifacts/ledger/.
+ * Browser: bounded correlate history survives reload; other events stay in memory.
+ * Node scripts: JSONL under artifacts/ledger/.
  */
 
 import type { Epistemic, OpName, TPPolicy } from './types';
@@ -23,12 +24,84 @@ export interface LedgerRecord {
 }
 
 const RING_MAX = 200;
-const ring: LedgerRecord[] = [];
+const CORRELATE_STORAGE_KEY = 'cmb.correlate-ledger.v1';
+const CORRELATE_STORAGE_BYTES = 2 * 1024 * 1024;
+
+function browserStorage(): Storage | undefined {
+  try { return typeof window === 'undefined' ? undefined : window.localStorage; }
+  catch { return undefined; }
+}
+
+function validCorrelateRecord(value: unknown): value is LedgerRecord {
+  if (!value || typeof value !== 'object') return false;
+  const rec = value as Partial<LedgerRecord>;
+  if (rec.kind !== 'correlate' || typeof rec.id !== 'string' || !rec.id || rec.id.length > 256 ||
+      typeof rec.at !== 'number' || !Number.isSafeInteger(rec.at) || rec.at < 0 || rec.at > 8.64e15 ||
+      !rec.detail || typeof rec.detail !== 'object' || !Array.isArray(rec.detail.hits) || rec.detail.hits.length > 128) return false;
+  return rec.detail.hits.every((hit: unknown) => {
+    if (!hit || typeof hit !== 'object') return false;
+    const h = hit as Record<string, unknown>;
+    return typeof h.metric === 'string' && ['pearson', 'spearman', 'lagged-pearson', 'cosine'].includes(h.metric) &&
+      typeof h.score === 'number' && Number.isFinite(h.score) &&
+      typeof h.pValue === 'number' && Number.isFinite(h.pValue) && h.pValue >= 0 && h.pValue <= 1 &&
+      typeof h.lag === 'number' && Number.isSafeInteger(h.lag) &&
+      typeof h.n === 'number' && Number.isSafeInteger(h.n) && h.n > 0 &&
+      (h.seedNodeId === undefined || typeof h.seedNodeId === 'string') &&
+      (h.targetNodeId === undefined || typeof h.targetNodeId === 'string');
+  });
+}
+
+function readCorrelateHistory(): LedgerRecord[] {
+  try {
+    const text = browserStorage()?.getItem(CORRELATE_STORAGE_KEY);
+    if (!text || new TextEncoder().encode(text).byteLength > CORRELATE_STORAGE_BYTES) return [];
+    const stored: unknown = JSON.parse(text);
+    if (!stored || typeof stored !== 'object') return [];
+    const { schema, records } = stored as { schema?: unknown; records?: unknown };
+    if (schema !== 'cmb.correlate-ledger/v1' || !Array.isArray(records) || records.length > RING_MAX ||
+        !records.every(validCorrelateRecord)) return [];
+    const seen = new Set<string>();
+    return records.sort((a, b) => b.at - a.at).filter(rec => {
+      if (seen.has(rec.id)) return false;
+      seen.add(rec.id);
+      return true;
+    });
+  } catch { return []; }
+}
+
+const correlateHistory = readCorrelateHistory();
+const ring: LedgerRecord[] = correlateHistory.slice();
 let seq = 0;
 
 function nextId(kind: string): string {
-  seq += 1;
-  return `led-${kind}-${Date.now()}-${seq}`;
+  let id: string;
+  do { id = `led-${kind}-${Date.now()}-${++seq}`; }
+  while (ring.some(rec => rec.id === id) || correlateHistory.some(rec => rec.id === id));
+  return id;
+}
+
+function persistCorrelateRecord(rec: LedgerRecord): void {
+  if (!validCorrelateRecord(rec)) return;
+  // Snapshot serializable bytes before updating history, so a mutable/cyclic or
+  // oversized caller record cannot poison later writes or erase older evidence.
+  let snapshot: LedgerRecord;
+  try {
+    const one = JSON.stringify({ schema: 'cmb.correlate-ledger/v1', records: [rec] });
+    if (new TextEncoder().encode(one).byteLength > CORRELATE_STORAGE_BYTES) return;
+    snapshot = JSON.parse(one).records[0] as LedgerRecord;
+  } catch { return; }
+  const previous = correlateHistory.findIndex(item => item.id === rec.id);
+  if (previous >= 0) correlateHistory.splice(previous, 1);
+  correlateHistory.unshift(snapshot);
+  correlateHistory.length = Math.min(correlateHistory.length, RING_MAX);
+  try {
+    let text = JSON.stringify({ schema: 'cmb.correlate-ledger/v1', records: correlateHistory });
+    while (new TextEncoder().encode(text).byteLength > CORRELATE_STORAGE_BYTES && correlateHistory.length) {
+      correlateHistory.pop();
+      text = JSON.stringify({ schema: 'cmb.correlate-ledger/v1', records: correlateHistory });
+    }
+    browserStorage()?.setItem(CORRELATE_STORAGE_KEY, text);
+  } catch { /* Keep the live ledger usable when browser storage is unavailable. */ }
 }
 
 /** Append a ledger record (always in-memory; optionally mirrored by callers to JSONL). */
@@ -56,6 +129,7 @@ export function ledgerAppend(
   };
   ring.unshift(rec);
   if (ring.length > RING_MAX) ring.length = RING_MAX;
+  if (rec.kind === 'correlate') persistCorrelateRecord(rec);
   return rec;
 }
 
@@ -96,6 +170,8 @@ export function ledgerSnapshot(): LedgerRecord[] {
 
 export function ledgerClear(): void {
   ring.length = 0;
+  correlateHistory.length = 0;
+  try { browserStorage()?.removeItem(CORRELATE_STORAGE_KEY); } catch { /* Storage may be disabled. */ }
   seq = 0;
 }
 

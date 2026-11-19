@@ -134,9 +134,11 @@ export default function App() {
   const [activeEdge, setActiveEdge] = useState<CorrelateEdge | null>(null);
   const [edgePThreshold, setEdgePThreshold] = useState(() => {
     if (typeof window === 'undefined') return 0.01;
-    const raw = window.sessionStorage.getItem('meaning-map-edge-p-threshold');
-    const n = raw == null ? NaN : Number(raw);
-    return Number.isFinite(n) ? Math.min(0.5, Math.max(0, n)) : 0.01;
+    try {
+      const raw = window.sessionStorage.getItem('meaning-map-edge-p-threshold');
+      const n = raw == null ? NaN : Number(raw);
+      return Number.isFinite(n) ? Math.min(0.5, Math.max(0, n)) : 0.01;
+    } catch { return 0.01; }
   });
   const [dressingMap, setDressingMap] = useState<DressingStateMap>({});
   const [dressingLog, setDressingLog] = useState<
@@ -371,7 +373,8 @@ export default function App() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    window.sessionStorage.setItem('meaning-map-edge-p-threshold', String(edgePThreshold));
+    try { window.sessionStorage.setItem('meaning-map-edge-p-threshold', String(edgePThreshold)); }
+    catch { /* Continue with the current threshold when storage is disabled. */ }
   }, [edgePThreshold]);
 
   const onAmpScale = (ell: number, v: number) => {
